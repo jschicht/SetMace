@@ -42,8 +42,6 @@ From version 1.0.0.9 the -d switch will also dump timestamp information from the
 Warning:
 Bypassing the filesystem and writing to physical disk is by nature a risky operation. And it's success is totally dependent on me gotten SetMace resolving NTFS correctly. Having said that, I have tested it on both XP sp3 x86,  Windows 7 x86/x64 and Windows 8.1 x64, on which it works fine. This new method of timestamp manipulation is a whole lot harder to detect. In fact, I can't think of any method, except the presence of this tool, and by comparison of some other artifact (like a shadow copy, and maybe $LogFile on not so heavily used volumes). The earlier version with the move-trick and/or NtSetInformationFile would leave traces in the $LogFile. Even though the $LogFile is circular, and does not hold "evidence" for long on a system drive, you may find earlier versions of it in a shadow copy. However, this is certainly advanced forensic work. I will still call this new version experimental, so please do not test on any volume you are afraid of loosing data from. If you want to test it for me, please let me know.
 
-Limitation
-Since Windows 8, an option to format NTFS volumes with MFT record size of 4096 bytes. Currently SetMace will throw an error and exit if such a volume is attempted at. However it is rather trivial to add support for, so maybe in a future release.
 
 Examples;
 
@@ -75,7 +73,6 @@ Dumping all timestamps for $MFT itself:
 setmace.exe C:\$MFT -d
 or
 setmace.exe C:0 -d
-
 
 
 
