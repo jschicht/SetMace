@@ -1,4 +1,6 @@
-This is a filesystem timestamp manipulation tool, originally inspired by good old timestomp. This version is NTFS only, and both $STANDARD_INFORMATION and $FILE_NAME attributes are supported. In latest version, there is no longer any dependency on NtSetInformationFile. That means it is completely based on resolving the filesystem internally and writing the timestamps directly to the physical disk, and effectively bypassing anything imposed by the filesystem/OS. Though you need to have adminstrator privileges. In this version there is also support for unlimited $FILE_NAME attributes, but is restricted to what fits inside an MFT record (not spread across $ATTRIBUTE_LISTS). In the previous version only the $FILE_NAME attributes was handled this way, but now also $STANDARD_INFORMATION. However be sure to have read the warning below! The $FILE_NAME attribute can be present twice, giving it 8 possible timestamps. Short filenames have only 1 $FILE_NAME attribute (4 timestamps) whereas files with long filenames have 2 $FILE_NAME attributes (4+4 timestamps). In fact, files with links (for instance hardlinks), may have more than 2 $FILE_NAME attributes!
+This is an advanced filesystem timestamp manipulation tool, originally inspired by good old timestomp. This version is NTFS only, and both $STANDARD_INFORMATION and $FILE_NAME attributes timestamps are supported for modification. In latest version, there is no longer any dependency on NtSetInformationFile. That means it is completely based on resolving the filesystem internally and writing the timestamps directly to the physical disk, and effectively bypassing anything imposed by the filesystem/OS. Though you need to have adminstrator privileges. As of version 1.0.0.10, a kernel mode driver is responsible for writing the modified record back to disk. There is also support for unlimited $FILE_NAME attributes, but is restricted to what fits inside an MFT record (not spread across $ATTRIBUTE_LISTS). In earlier versions only the $FILE_NAME attributes was handled this way, but now also $STANDARD_INFORMATION. However be sure to have read the warning below! 
+
+The $FILE_NAME attribute can be present twice, giving it 8 possible timestamps. Short filenames have only 1 $FILE_NAME attribute (4 timestamps) whereas files with long filenames have 2 $FILE_NAME attributes (4+4 timestamps). In fact, files with links (for instance hardlinks), may have more than 2 $FILE_NAME attributes!
 
 Parameter explanation;
 
@@ -20,13 +22,28 @@ Parameter explanation;
 "-x" will update timestamps in both $FILE_NAME and $STANDARD_INFORMATION. 
 
 Note:
-Directories are also supported just like regular files. On nt6.x (Vista - Windows 8), it is not easily possible to modify timestamps on the systemdrive (or a volume where a pagefile exist) when the host OS is running (unless you implement a kernel mode driver that can give you a "SL_FORCE_DIRECT_WRITE". However booting to WinPE (CD, USB, PXE etc) will let this tool write directly to the volume that the local system (systemdrive) is on. This restriction is only applicable to this tool on nt6.x and the systemdrive when host is running. Also beware that on nt6.x target volume will be automatically locked/dismounted prior physical disk writing, so be sure no heavy filesystem activity is going on on that volume when using this tool. And for nt6.x, since the volume is locked/dismounted, SetMace itself can't be located on the same volume as the target file for timestamp manipulation.
+Directories are also supported just like regular files. Since version 1.0.0.10, where a kernel mode driver was implemented, a lot of the restrictions put on earlier versions are now removed. The restrictions that was limiting SetMace in previous versions:
+
+Since nt6.x Microsoft blocked direct write access to within volume space (like \\.\PhysicalDrive0 or \\.\E:): http://msdn.microsoft.com/en-us/library/windows/hardware/ff551353(v=vs.85).aspx
+In order to do so it was necessary to dismount the volume first, effectively releasing all open handles to the volume. However this was of course not possible to do on certain volumes (for instance on the systemdrive or a volume where a pagefile existed). The solution to make this work the proper way is to implement a driver that can set the SL_FORCE_DIRECT_WRITE flag on the Irp before sending it further: http://msdn.microsoft.com/en-us/library/windows/hardware/ff549427(v=vs.85).aspx That way, there is no need to dismount the volume, and thus even the systemdrive can be modified. All this, did not apply to nt5.x (XP and Server 2003) and earlier. With 64-bit Windows, Microsoft implemented another security measure, "PatchGuard", that will protect the kernel in memory, and prevent loading unsigned drivers or drivers signed with a test certificate. Of course Windows does not natively ship with a driver allowing to circumvent the security feature mentioned above. That leaves 3 possible options to for properly using SetMace on a 64-bit nt6.x OS (all other Windows OS's are fine):
+
+1. Boot with TESTSIGNING configured and use a test signed driver.
+2. Crack PatchGuard (and thus no need for TESTSIGNING  configured) and use a test signed driver.
+3. Find a way to use a properly signed driver (maybe next version).
+
+Since the driver in this version is test signed, we need to choose 1 or 2. Both work equally well, and in fact  as of today 4. August 2014, patchguard is officially cracked and unfixed (google KPP Destroyer).
+
+Also note that if driver fails loading, SetMace will attempt the old method of writing to physical disk by dismounting the volume first.
+
 
 Dumping information with the -d switch
 From version 1.0.0.9 the -d switch will also dump timestamp information from the target volume, as well as from present any shadow copies of that volume. So if the volume that the target file resides on, also have shadow copies, the -d switch will also dump information for the same MFT reference for every relevant shadow copy. Matching shadow copies are identified by the volume name and serial number. The dumped information includes filename, parent ref, sequence number and hardlink number to help identify if the same file actually holds a particular MFT ref across shadow copies.
 
 Warning:
-Bypassing the filesystem and writing to physical disk is by nature a risky operation. And it's success is totally dependent on me/SetMace having resolved NTFS correctly. Having said that, I have tested this new version on both XP sp3 x86 and Windows 7 x86/x64, on which it works fine. This new method of timestamp manipulation is a whole lot harder to detect. In fact, I can't think of any method, except the presence of this tool. The earlier version with the move-trick and/or NtSetInformationFile would leave traces in the $LogFile. That's no longer a concern with latest version. I will still call this new version experimental, so please do not test on any volume you are afraid of loosing data from. If you want to test it for me, please let me know.
+Bypassing the filesystem and writing to physical disk is by nature a risky operation. And it's success is totally dependent on me gotten SetMace resolving NTFS correctly. Having said that, I have tested it on both XP sp3 x86,  Windows 7 x86/x64 and Windows 8.1 x64, on which it works fine. This new method of timestamp manipulation is a whole lot harder to detect. In fact, I can't think of any method, except the presence of this tool, and by comparison of some other artifact (like a shadow copy, and maybe $LogFile on not so heavily used volumes). The earlier version with the move-trick and/or NtSetInformationFile would leave traces in the $LogFile. Even though the $LogFile is circular, and does not hold "evidence" for long on a system drive, you may find earlier versions of it in a shadow copy. However, this is certainly advanced forensic work. I will still call this new version experimental, so please do not test on any volume you are afraid of loosing data from. If you want to test it for me, please let me know.
+
+Limitation
+Since Windows 8, an option to format NTFS volumes with MFT record size of 4096 bytes. Currently SetMace will throw an error and exit if such a volume is attempted at. However it is rather trivial to add support for, so maybe in a future release.
 
 Examples;
 
@@ -65,6 +82,7 @@ setmace.exe C:0 -d
 Thanks:
 Ascend4nt for the WinTimeFunctions
 DDan at forensicfocus for various help
+Driver code; http://www.codeproject.com/Articles/28314/Reading-and-Writing-to-Raw-Disk-Sectors
 
 
 

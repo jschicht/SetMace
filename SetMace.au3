@@ -1,12 +1,13 @@
 #RequireAdmin
 #Region ;**** Directives created by AutoIt3Wrapper_GUI ****
-#AutoIt3Wrapper_UseX64=y
 #AutoIt3Wrapper_Change2CUI=y
 #AutoIt3Wrapper_Res_Comment=Timestamp manipulation
 #AutoIt3Wrapper_Res_Description=Change any file timestamp by using low level disk access
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.9
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.12
 #AutoIt3Wrapper_Res_LegalCopyright=Joakim Schicht
 #AutoIt3Wrapper_Res_requestedExecutionLevel=asInvoker
+#AutoIt3Wrapper_Res_File_Add=C:\tmp\sectorio.sys
+#AutoIt3Wrapper_Res_File_Add=C:\tmp\sectorio64.sys
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
 
 #Include <WinAPIEx.au3>
@@ -15,6 +16,7 @@
 #Include <FileConstants.au3>
 #Include <APIConstants.au3>
 ;
+; https://github.com/jschicht
 ; http://code.google.com/p/mft2csv/
 ;
 Global $DoSi=0				; -x, -si
@@ -25,12 +27,12 @@ Global $DoMTime=0			; -z, -e
 Global $DoRTime=0			; -z, -a
 Global $DoAll4Timestamps=0	; -z
 Global $DoRead=0			; -d
-Global $NeedLock=0, $drive, $TargetDrive, $FormattedTimestamp1, $SIArrValue[13][1], $SIArrOffset[13][1], $SIArrSize[13][1], $FNArrValue[14][1], $FNArrOffset[14][1], $IsFirstRun=1, $SI_Number, $FN_Number
+Global $NeedLock=0, $drive, $FormattedTimestamp1, $SIArrValue[13][1], $SIArrOffset[13][1], $SIArrSize[13][1], $FNArrValue[14][1], $FNArrOffset[14][1], $IsFirstRun=1, $SI_Number, $FN_Number
 Global $LockedFileName,$DirArray,$NeedIndx=0, $ResidentIndx, $AttributesArr[18][4], $DoExtractMeta=False, $TargetFileName, $DATA_Name, $FN_FileName, $NameQ[5]
 Global $TargetImageFile, $Entries, $InputFile, $IsShadowCopy=False, $IsPhysicalDrive=False, $IsImage=False, $hDisk, $sBuffer, $ComboPhysicalDrives, $Combo
 Global $OutPutPath=@ScriptDir, $InitState = False, $DATA_Clusters, $AttributeOutFileName, $DATA_InitSize, $ImageOffset, $ADS_Name, $IndexNumber, $NonResidentFlag, $DATA_RealSize, $DataRun, $DATA_LengthOfAttribute
 Global $TargetDrive = "", $ALInnerCouner, $MFTSize, $TargetOffset, $SectorsPerCluster,$MFT_Record_Size,$BytesPerCluster,$BytesPerSector,$MFT_Offset,$IsDirectory
-Global $IsolatedAttributeList, $AttribListNonResident=0,$IsCompressed,$IsSparse, $_COMMON_KERNEL32DLL=DllOpen("kernel32.dll")
+Global $IsolatedAttributeList, $AttribListNonResident=0,$IsCompressed,$IsSparse, $_COMMON_KERNEL32DLL=DllOpen("kernel32.dll"),$Drivername = "sectorio"
 Global $RUN_VCN[1],$RUN_Clusters[1],$MFT_RUN_Clusters[1],$MFT_RUN_VCN[1],$DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$sBuffer,$AttrQ[1]
 Global $IndxEntryNumberArr[1],$IndxMFTReferenceArr[1],$IndxMFTRefSeqNoArr[1],$IndxIndexFlagsArr[1],$IndxMFTReferenceOfParentArr[1],$IndxMFTParentRefSeqNoArr[1],$IndxCTimeArr[1],$IndxATimeArr[1],$IndxMTimeArr[1],$IndxRTimeArr[1],$IndxAllocSizeArr[1],$IndxRealSizeArr[1],$IndxFileFlagsArr[1],$IndxFileNameArr[1],$IndxSubNodeVCNArr[1],$IndxNameSpaceArr[1]
 Global $IRArr[12][2],$IndxArr[20][2]
@@ -67,7 +69,7 @@ Global Const $tagFILEINTERNALINFORMATION = "int IndexNumber;"
 Global $Timerstart = TimerInit()
 
 ConsoleWrite("Starting SetMace by Joakim Schicht" & @CRLF)
-ConsoleWrite("Version 1.0.0.9" & @CRLF & @CRLF)
+ConsoleWrite("Version 1.0.0.12" & @CRLF & @CRLF)
 
 If Not $cmdline[0] Then
 	ConsoleWrite("Error: Missing parameters" & @CRLF)
@@ -385,17 +387,44 @@ Func _StripMftRecord($MFTEntry)
 	$UpdSeqArrOffset = Dec(_SwapEndian(StringMid($MFTEntry,11,4)))
 	$UpdSeqArrSize = Dec(_SwapEndian(StringMid($MFTEntry,15,4)))
 	$UpdSeqArr = StringMid($MFTEntry,3+($UpdSeqArrOffset*2),$UpdSeqArrSize*2*2)
-	$UpdSeqArrPart0 = StringMid($UpdSeqArr,1,4)
-	$UpdSeqArrPart1 = StringMid($UpdSeqArr,5,4)
-	$UpdSeqArrPart2 = StringMid($UpdSeqArr,9,4)
-	$RecordEnd1 = StringMid($MFTEntry,1023,4)
-	$RecordEnd2 = StringMid($MFTEntry,2047,4)
-	If $UpdSeqArrPart0 <> $RecordEnd1 OR $UpdSeqArrPart0 <> $RecordEnd2 Then
-		ConsoleWrite("Error the $MFT record is corrupt" & @CRLF)
-		Return SetError(1,0,0)
-	Else
+
+	If $MFT_Record_Size = 1024 Then
+		Local $UpdSeqArrPart0 = StringMid($UpdSeqArr,1,4)
+		Local $UpdSeqArrPart1 = StringMid($UpdSeqArr,5,4)
+		Local $UpdSeqArrPart2 = StringMid($UpdSeqArr,9,4)
+		Local $RecordEnd1 = StringMid($MFTEntry,1023,4)
+		Local $RecordEnd2 = StringMid($MFTEntry,2047,4)
+		If $UpdSeqArrPart0 <> $RecordEnd1 OR $UpdSeqArrPart0 <> $RecordEnd2 Then
+			_DebugOut("The record failed Fixup", $MFTEntry)
+			Return ""
+		EndIf
 		$MFTEntry = StringMid($MFTEntry,1,1022) & $UpdSeqArrPart1 & StringMid($MFTEntry,1027,1020) & $UpdSeqArrPart2
+	ElseIf $MFT_Record_Size = 4096 Then
+		Local $UpdSeqArrPart0 = StringMid($UpdSeqArr,1,4)
+		Local $UpdSeqArrPart1 = StringMid($UpdSeqArr,5,4)
+		Local $UpdSeqArrPart2 = StringMid($UpdSeqArr,9,4)
+		Local $UpdSeqArrPart3 = StringMid($UpdSeqArr,13,4)
+		Local $UpdSeqArrPart4 = StringMid($UpdSeqArr,17,4)
+		Local $UpdSeqArrPart5 = StringMid($UpdSeqArr,21,4)
+		Local $UpdSeqArrPart6 = StringMid($UpdSeqArr,25,4)
+		Local $UpdSeqArrPart7 = StringMid($UpdSeqArr,29,4)
+		Local $UpdSeqArrPart8 = StringMid($UpdSeqArr,33,4)
+		Local $RecordEnd1 = StringMid($MFTEntry,1023,4)
+		Local $RecordEnd2 = StringMid($MFTEntry,2047,4)
+		Local $RecordEnd3 = StringMid($MFTEntry,3071,4)
+		Local $RecordEnd4 = StringMid($MFTEntry,4095,4)
+		Local $RecordEnd5 = StringMid($MFTEntry,5119,4)
+		Local $RecordEnd6 = StringMid($MFTEntry,6143,4)
+		Local $RecordEnd7 = StringMid($MFTEntry,7167,4)
+		Local $RecordEnd8 = StringMid($MFTEntry,8191,4)
+		If $UpdSeqArrPart0 <> $RecordEnd1 OR $UpdSeqArrPart0 <> $RecordEnd2 OR $UpdSeqArrPart0 <> $RecordEnd3 OR $UpdSeqArrPart0 <> $RecordEnd4 OR $UpdSeqArrPart0 <> $RecordEnd5 OR $UpdSeqArrPart0 <> $RecordEnd6 OR $UpdSeqArrPart0 <> $RecordEnd7 OR $UpdSeqArrPart0 <> $RecordEnd8 Then
+			_DebugOut("The record failed Fixup", $MFTEntry)
+			Return ""
+		Else
+			$MFTEntry =  StringMid($MFTEntry,1,1022) & $UpdSeqArrPart1 & StringMid($MFTEntry,1027,1020) & $UpdSeqArrPart2 & StringMid($MFTEntry,2051,1020) & $UpdSeqArrPart3 & StringMid($MFTEntry,3075,1020) & $UpdSeqArrPart4 & StringMid($MFTEntry,4099,1020) & $UpdSeqArrPart5 & StringMid($MFTEntry,5123,1020) & $UpdSeqArrPart6 & StringMid($MFTEntry,6147,1020) & $UpdSeqArrPart7 & StringMid($MFTEntry,7171,1020) & $UpdSeqArrPart8
+		EndIf
 	EndIf
+
 	$RecordSize = Dec(_SwapEndian(StringMid($MFTEntry,51,8)),2)
 	$HeaderSize = Dec(_SwapEndian(StringMid($MFTEntry,43,4)),2)
 	$MFTEntry = StringMid($MFTEntry,$HeaderSize*2+3,($RecordSize-$HeaderSize-8)*2)        ;strip "0x..." and "FFFFFFFF..."
@@ -441,17 +470,44 @@ $HEADER_MFTREcordNumber = ""
 $UpdSeqArrOffset = Dec(_SwapEndian(StringMid($MFTEntry,11,4)))
 $UpdSeqArrSize = Dec(_SwapEndian(StringMid($MFTEntry,15,4)))
 $UpdSeqArr = StringMid($MFTEntry,3+($UpdSeqArrOffset*2),$UpdSeqArrSize*2*2)
-$UpdSeqArrPart0 = StringMid($UpdSeqArr,1,4)
-$UpdSeqArrPart1 = StringMid($UpdSeqArr,5,4)
-$UpdSeqArrPart2 = StringMid($UpdSeqArr,9,4)
-$RecordEnd1 = StringMid($MFTEntry,1023,4)
-$RecordEnd2 = StringMid($MFTEntry,2047,4)
-If $UpdSeqArrPart0 <> $RecordEnd1 OR $UpdSeqArrPart0 <> $RecordEnd2 Then
-	ConsoleWrite("Error: the $MFT record is corrupt" & @CRLF)
-	Return SetError(1,0,0)
- Else
-	$MFTEntry = StringMid($MFTEntry,1,1022) & $UpdSeqArrPart1 & StringMid($MFTEntry,1027,1020) & $UpdSeqArrPart2
-EndIf
+
+	If $MFT_Record_Size = 1024 Then
+		Local $UpdSeqArrPart0 = StringMid($UpdSeqArr,1,4)
+		Local $UpdSeqArrPart1 = StringMid($UpdSeqArr,5,4)
+		Local $UpdSeqArrPart2 = StringMid($UpdSeqArr,9,4)
+		Local $RecordEnd1 = StringMid($MFTEntry,1023,4)
+		Local $RecordEnd2 = StringMid($MFTEntry,2047,4)
+		If $UpdSeqArrPart0 <> $RecordEnd1 OR $UpdSeqArrPart0 <> $RecordEnd2 Then
+			_DebugOut("The record failed Fixup", $MFTEntry)
+			Return ""
+		EndIf
+		$MFTEntry = StringMid($MFTEntry,1,1022) & $UpdSeqArrPart1 & StringMid($MFTEntry,1027,1020) & $UpdSeqArrPart2
+	ElseIf $MFT_Record_Size = 4096 Then
+		Local $UpdSeqArrPart0 = StringMid($UpdSeqArr,1,4)
+		Local $UpdSeqArrPart1 = StringMid($UpdSeqArr,5,4)
+		Local $UpdSeqArrPart2 = StringMid($UpdSeqArr,9,4)
+		Local $UpdSeqArrPart3 = StringMid($UpdSeqArr,13,4)
+		Local $UpdSeqArrPart4 = StringMid($UpdSeqArr,17,4)
+		Local $UpdSeqArrPart5 = StringMid($UpdSeqArr,21,4)
+		Local $UpdSeqArrPart6 = StringMid($UpdSeqArr,25,4)
+		Local $UpdSeqArrPart7 = StringMid($UpdSeqArr,29,4)
+		Local $UpdSeqArrPart8 = StringMid($UpdSeqArr,33,4)
+		Local $RecordEnd1 = StringMid($MFTEntry,1023,4)
+		Local $RecordEnd2 = StringMid($MFTEntry,2047,4)
+		Local $RecordEnd3 = StringMid($MFTEntry,3071,4)
+		Local $RecordEnd4 = StringMid($MFTEntry,4095,4)
+		Local $RecordEnd5 = StringMid($MFTEntry,5119,4)
+		Local $RecordEnd6 = StringMid($MFTEntry,6143,4)
+		Local $RecordEnd7 = StringMid($MFTEntry,7167,4)
+		Local $RecordEnd8 = StringMid($MFTEntry,8191,4)
+		If $UpdSeqArrPart0 <> $RecordEnd1 OR $UpdSeqArrPart0 <> $RecordEnd2 OR $UpdSeqArrPart0 <> $RecordEnd3 OR $UpdSeqArrPart0 <> $RecordEnd4 OR $UpdSeqArrPart0 <> $RecordEnd5 OR $UpdSeqArrPart0 <> $RecordEnd6 OR $UpdSeqArrPart0 <> $RecordEnd7 OR $UpdSeqArrPart0 <> $RecordEnd8 Then
+			_DebugOut("The record failed Fixup", $MFTEntry)
+			Return ""
+		Else
+			$MFTEntry =  StringMid($MFTEntry,1,1022) & $UpdSeqArrPart1 & StringMid($MFTEntry,1027,1020) & $UpdSeqArrPart2 & StringMid($MFTEntry,2051,1020) & $UpdSeqArrPart3 & StringMid($MFTEntry,3075,1020) & $UpdSeqArrPart4 & StringMid($MFTEntry,4099,1020) & $UpdSeqArrPart5 & StringMid($MFTEntry,5123,1020) & $UpdSeqArrPart6 & StringMid($MFTEntry,6147,1020) & $UpdSeqArrPart7 & StringMid($MFTEntry,7171,1020) & $UpdSeqArrPart8
+		EndIf
+	EndIf
+
 $HEADER_RecordRealSize = Dec(_SwapEndian(StringMid($MFTEntry,51,8)),2)
 If $UpdSeqArrOffset = 48 Then
 	$HEADER_MFTREcordNumber = Dec(_SwapEndian(StringMid($MFTEntry,91,8)),2)
@@ -871,9 +927,10 @@ Func _FindFileMFTRecord($TargetFile)
 	EndIf
 	$TargetFile = _DecToLittleEndian($TargetFile)
 	$TargetFileDec = Dec(_SwapEndian($TargetFile),2)
+	Local $RecordsDivisor = $MFT_Record_Size/512
 	For $i = 1 To UBound($MFT_RUN_Clusters)-1
 		$CurrentClusters = $MFT_RUN_Clusters[$i]
-		$RecordsInCurrentRun = ($CurrentClusters*$SectorsPerCluster)/2
+		$RecordsInCurrentRun = ($CurrentClusters*$SectorsPerCluster)/$RecordsDivisor
 		$Counter+=$RecordsInCurrentRun
 		If $Counter>$TargetFileDec Then
 			ExitLoop
@@ -881,21 +938,21 @@ Func _FindFileMFTRecord($TargetFile)
 	Next
 	$TryAt = $Counter-$RecordsInCurrentRun
 	$TryAtArrIndex = $i
-	$RecordsPerCluster = $SectorsPerCluster/2
+	$RecordsPerCluster = $SectorsPerCluster/$RecordsDivisor
 	Do
 		$RecordJumper+=$RecordsPerCluster
 		$Counter2+=1
 		$Final = $TryAt+$RecordJumper
 	Until $Final>=$TargetFileDec
 	$RecordsTooMuch = $Final-$TargetFileDec
-	_WinAPI_SetFilePointerEx($hFile, $ImageOffset+$MFT_RUN_VCN[$i]*$BytesPerCluster+($Counter2*$BytesPerCluster)-($RecordsTooMuch*1024), $FILE_BEGIN)
+	_WinAPI_SetFilePointerEx($hFile, $ImageOffset+$MFT_RUN_VCN[$i]*$BytesPerCluster+($Counter2*$BytesPerCluster)-($RecordsTooMuch*$MFT_Record_Size), $FILE_BEGIN)
 	_WinAPI_ReadFile($hFile, DllStructGetPtr($tBuffer), $MFT_Record_Size, $nBytes)
 	$record = DllStructGetData($tBuffer, 1)
 	If StringMid($record,91,8) = $TargetFile Then
 		$TmpOffset = DllCall('kernel32.dll', 'int', 'SetFilePointerEx', 'ptr', $hFile, 'int64', 0, 'int64*', 0, 'dword', 1)
-		ConsoleWrite("Record number: " & Dec(_SwapEndian($TargetFile),2) & " found at disk offset: 0x" & Hex($TmpOffset[3]-1024) & @CRLF)
+		ConsoleWrite("Record number: " & Dec(_SwapEndian($TargetFile),2) & " found at volume offset: 0x" & Hex($TmpOffset[3]-$MFT_Record_Size) & @CRLF)
 		_WinAPI_CloseHandle($hFile)
-		$RetVal[0] = $TmpOffset[3]-1024
+		$RetVal[0] = $TmpOffset[3]-$MFT_Record_Size
 		$RetVal[1] = $record
 		Return $RetVal
 	Else
@@ -1003,6 +1060,10 @@ Func _ReadBootSector($TargetDrive)
 	Else
 		$MFT_Record_Size = $BytesPerCluster * $ClustersPerFileRecordSegment
 	EndIf
+;	If $MFT_Record_Size <> 1024 Then
+;		ConsoleWrite("Error: MFT record size of " & $MFT_Record_Size & " not yet supported" & @CRLF)
+;		Exit
+;	EndIf
 EndFunc
 
 Func _HexEncode($bInput)
@@ -2284,31 +2345,8 @@ Func _Main($DiskOffset,$TargetRef)
 	Local $tBuffer=DllStructCreate("byte[512]"),$nBytes,$number
 	$IsLocked = 0
 	$IsDismounted = 0
-	If @OSBuild >= 6000 And $NeedLock Then
-		If StringLeft(@AutoItExe,2) = $TargetDrive Then
-			ConsoleWrite("Error: You can't lock the volume that SetMace is run from" & @crlf)
-			Exit
-		EndIf
-		$hFile = _WinAPI_LockVolume($TargetDrive)
-		If @error Then
-			$hFile = _WinAPI_DismountVolumeMod($TargetDrive)
-			If $hFile = 0 Then
-				ConsoleWrite("Error: Could not dismount " & $TargetDrive & @CRLF)
-				Exit
-			EndIf
-			ConsoleWrite("Success dismounting " & $TargetDrive & @CRLF)
-			$IsDismounted = 1
-		Else
-			$IsLocked = 1
-			ConsoleWrite("Successfully locked " & $TargetDrive & @CRLF)
-		EndIf
-	Else
-		Local $hFile = _WinAPI_CreateFile("\\.\" & $TargetDrive,2,6,7)
-		If $hFile = 0 then
-			ConsoleWrite("Error: " & _WinAPI_GetLastErrorMessage() & " in CreateFile for: " & "\\.\" & $TargetDrive & @crlf)
-			Exit
-		EndIf
-	EndIf
+
+	Local $hFile = _WinAPI_CreateFile("\\.\" & $TargetDrive,2,6,7)
 
 	If $DoRead Then
 		ConsoleWrite(@CRLF)
@@ -2341,27 +2379,52 @@ Func _Main($DiskOffset,$TargetRef)
 		Return
 	EndIf
 	Local $MFTRecordDump = DllStructGetData($tBuffer1,1)
-	;ConsoleWrite("Dump of record for " & $cmdline[1] & @crlf)
-	;ConsoleWrite(_HexEncode($MFTRecordDump) & @crlf)
+	_WinAPI_CloseHandle($hFile)
+
 	$UpdSeqArrOffset = StringMid($MFTRecordDump,11,4)
 	$UpdSeqArrOffset = Dec(StringMid($UpdSeqArrOffset,3,2) & StringMid($UpdSeqArrOffset,1,2))
 	$UpdSeqArrSize = StringMid($MFTRecordDump,15,4)
 	$UpdSeqArrSize = Dec(StringMid($UpdSeqArrSize,3,2) & StringMid($UpdSeqArrSize,1,2))
 	$UpdSeqArr = StringMid($MFTRecordDump,3+($UpdSeqArrOffset*2),$UpdSeqArrSize*2*2)
-	$UpdSeqArrPart0 = StringMid($UpdSeqArr,1,4)
-	$UpdSeqArrPart1 = StringMid($UpdSeqArr,5,4)
-	$UpdSeqArrPart2 = StringMid($UpdSeqArr,9,4)
-	$RecordEnd1 = StringMid($MFTRecordDump,1023,4)
-	$RecordEnd2 = StringMid($MFTRecordDump,2047,4)
-	If $RecordEnd1 <> $RecordEnd2 OR $UpdSeqArrPart0 <> $RecordEnd1 Then
-		ConsoleWrite("Error: the $MFT record is corrupt" & @CRLF)
-		Exit
-	EndIf
+	;ConsoleWrite("$UpdSeqArr: " & $UpdSeqArr & @crlf)
+	;ConsoleWrite("Dump of record for " & $cmdline[1] & @crlf)
+	;ConsoleWrite(_HexEncode($MFTRecordDump) & @crlf)
 
-	$MFTRecordDump = StringMid($MFTRecordDump,1,1022) & $UpdSeqArrPart1 & StringMid($MFTRecordDump,1027,1020) & $UpdSeqArrPart2 ; fixup
-	If NOT (StringMid($MFTRecordDump,91,8) = _DecToLittleEndian($TargetRef)) Then
-		ConsoleWrite("Error: Not correct MFT record number" & @crlf)
-		Exit
+	If $MFT_Record_Size = 1024 Then
+		Local $UpdSeqArrPart0 = StringMid($UpdSeqArr,1,4)
+		Local $UpdSeqArrPart1 = StringMid($UpdSeqArr,5,4)
+		Local $UpdSeqArrPart2 = StringMid($UpdSeqArr,9,4)
+		Local $RecordEnd1 = StringMid($MFTRecordDump,1023,4)
+		Local $RecordEnd2 = StringMid($MFTRecordDump,2047,4)
+		If $UpdSeqArrPart0 <> $RecordEnd1 OR $UpdSeqArrPart0 <> $RecordEnd2 Then
+			_DebugOut("The record failed Fixup", $MFTRecordDump)
+			Return ""
+		EndIf
+		$MFTRecordDump = StringMid($MFTRecordDump,1,1022) & $UpdSeqArrPart1 & StringMid($MFTRecordDump,1027,1020) & $UpdSeqArrPart2
+	ElseIf $MFT_Record_Size = 4096 Then
+		Local $UpdSeqArrPart0 = StringMid($UpdSeqArr,1,4)
+		Local $UpdSeqArrPart1 = StringMid($UpdSeqArr,5,4)
+		Local $UpdSeqArrPart2 = StringMid($UpdSeqArr,9,4)
+		Local $UpdSeqArrPart3 = StringMid($UpdSeqArr,13,4)
+		Local $UpdSeqArrPart4 = StringMid($UpdSeqArr,17,4)
+		Local $UpdSeqArrPart5 = StringMid($UpdSeqArr,21,4)
+		Local $UpdSeqArrPart6 = StringMid($UpdSeqArr,25,4)
+		Local $UpdSeqArrPart7 = StringMid($UpdSeqArr,29,4)
+		Local $UpdSeqArrPart8 = StringMid($UpdSeqArr,33,4)
+		Local $RecordEnd1 = StringMid($MFTRecordDump,1023,4)
+		Local $RecordEnd2 = StringMid($MFTRecordDump,2047,4)
+		Local $RecordEnd3 = StringMid($MFTRecordDump,3071,4)
+		Local $RecordEnd4 = StringMid($MFTRecordDump,4095,4)
+		Local $RecordEnd5 = StringMid($MFTRecordDump,5119,4)
+		Local $RecordEnd6 = StringMid($MFTRecordDump,6143,4)
+		Local $RecordEnd7 = StringMid($MFTRecordDump,7167,4)
+		Local $RecordEnd8 = StringMid($MFTRecordDump,8191,4)
+		If $UpdSeqArrPart0 <> $RecordEnd1 OR $UpdSeqArrPart0 <> $RecordEnd2 OR $UpdSeqArrPart0 <> $RecordEnd3 OR $UpdSeqArrPart0 <> $RecordEnd4 OR $UpdSeqArrPart0 <> $RecordEnd5 OR $UpdSeqArrPart0 <> $RecordEnd6 OR $UpdSeqArrPart0 <> $RecordEnd7 OR $UpdSeqArrPart0 <> $RecordEnd8 Then
+			_DebugOut("The record failed Fixup", $MFTEntry)
+			Return ""
+		Else
+			$MFTRecordDump =  StringMid($MFTRecordDump,1,1022) & $UpdSeqArrPart1 & StringMid($MFTRecordDump,1027,1020) & $UpdSeqArrPart2 & StringMid($MFTRecordDump,2051,1020) & $UpdSeqArrPart3 & StringMid($MFTRecordDump,3075,1020) & $UpdSeqArrPart4 & StringMid($MFTRecordDump,4099,1020) & $UpdSeqArrPart5 & StringMid($MFTRecordDump,5123,1020) & $UpdSeqArrPart6 & StringMid($MFTRecordDump,6147,1020) & $UpdSeqArrPart7 & StringMid($MFTRecordDump,7171,1020) & $UpdSeqArrPart8
+		EndIf
 	EndIf
 
 	$NewTimestamp = Hex($FormattedTimestamp1)
@@ -2395,72 +2458,206 @@ Func _Main($DiskOffset,$TargetRef)
 	If $DoSi Then
 		Select
 			Case $DoCTime
-				$MFTRecordDump = StringMid($MFTRecordDump,1,$SIArrOffset[2][1]-1) & $NewTimestampShifted & StringMid($MFTRecordDump,$SIArrOffset[2][1]+16,2048-$SIArrOffset[2][1])
+				$MFTRecordDump = StringMid($MFTRecordDump,1,$SIArrOffset[2][1]-1) & $NewTimestampShifted & StringMid($MFTRecordDump,$SIArrOffset[2][1]+16,($MFT_Record_Size*2)-$SIArrOffset[2][1])
 			Case $DoATime
-				$MFTRecordDump = StringMid($MFTRecordDump,1,$SIArrOffset[3][1]-1) & $NewTimestampShifted & StringMid($MFTRecordDump,$SIArrOffset[3][1]+16,2048-$SIArrOffset[3][1])
+				$MFTRecordDump = StringMid($MFTRecordDump,1,$SIArrOffset[3][1]-1) & $NewTimestampShifted & StringMid($MFTRecordDump,$SIArrOffset[3][1]+16,($MFT_Record_Size*2)-$SIArrOffset[3][1])
 			Case $DoMTime
-				$MFTRecordDump = StringMid($MFTRecordDump,1,$SIArrOffset[4][1]-1) & $NewTimestampShifted & StringMid($MFTRecordDump,$SIArrOffset[4][1]+16,2048-$SIArrOffset[4][1])
+				$MFTRecordDump = StringMid($MFTRecordDump,1,$SIArrOffset[4][1]-1) & $NewTimestampShifted & StringMid($MFTRecordDump,$SIArrOffset[4][1]+16,($MFT_Record_Size*2)-$SIArrOffset[4][1])
 			Case $DoRTime
-				$MFTRecordDump = StringMid($MFTRecordDump,1,$SIArrOffset[5][1]-1) & $NewTimestampShifted & StringMid($MFTRecordDump,$SIArrOffset[5][1]+16,2048-$SIArrOffset[5][1])
+				$MFTRecordDump = StringMid($MFTRecordDump,1,$SIArrOffset[5][1]-1) & $NewTimestampShifted & StringMid($MFTRecordDump,$SIArrOffset[5][1]+16,($MFT_Record_Size*2)-$SIArrOffset[5][1])
 			Case $DoAll4Timestamps
-				$MFTRecordDump = StringMid($MFTRecordDump,1,$SIArrOffset[2][1]-1) & $NewTimestampShifted & $NewTimestampShifted & $NewTimestampShifted & $NewTimestampShifted & StringMid($MFTRecordDump,$SIArrOffset[5][1]+16,2048-$SIArrOffset[5][1])
+				$MFTRecordDump = StringMid($MFTRecordDump,1,$SIArrOffset[2][1]-1) & $NewTimestampShifted & $NewTimestampShifted & $NewTimestampShifted & $NewTimestampShifted & StringMid($MFTRecordDump,$SIArrOffset[5][1]+16,($MFT_Record_Size*2)-$SIArrOffset[5][1])
 		EndSelect
 	EndIf
 	If $DoFn Then
 		For $number=1 To $FN_Number
 			Select
 				Case $DoCTime
-					$MFTRecordDump = StringMid($MFTRecordDump,1,$FNArrOffset[3][$number]-1) & $NewTimestampShifted & StringMid($MFTRecordDump,$FNArrOffset[3][$number]+16,2048-$FNArrOffset[3][$number])
+					$MFTRecordDump = StringMid($MFTRecordDump,1,$FNArrOffset[3][$number]-1) & $NewTimestampShifted & StringMid($MFTRecordDump,$FNArrOffset[3][$number]+16,($MFT_Record_Size*2)-$FNArrOffset[3][$number])
 				Case $DoATime
-					$MFTRecordDump = StringMid($MFTRecordDump,1,$FNArrOffset[4][$number]-1) & $NewTimestampShifted & StringMid($MFTRecordDump,$FNArrOffset[4][$number]+16,2048-$FNArrOffset[4][$number])
+					$MFTRecordDump = StringMid($MFTRecordDump,1,$FNArrOffset[4][$number]-1) & $NewTimestampShifted & StringMid($MFTRecordDump,$FNArrOffset[4][$number]+16,($MFT_Record_Size*2)-$FNArrOffset[4][$number])
 				Case $DoMTime
-					$MFTRecordDump = StringMid($MFTRecordDump,1,$FNArrOffset[5][$number]-1) & $NewTimestampShifted & StringMid($MFTRecordDump,$FNArrOffset[5][$number]+16,2048-$FNArrOffset[5][$number])
+					$MFTRecordDump = StringMid($MFTRecordDump,1,$FNArrOffset[5][$number]-1) & $NewTimestampShifted & StringMid($MFTRecordDump,$FNArrOffset[5][$number]+16,($MFT_Record_Size*2)-$FNArrOffset[5][$number])
 				Case $DoRTime
-					$MFTRecordDump = StringMid($MFTRecordDump,1,$FNArrOffset[6][$number]-1) & $NewTimestampShifted & StringMid($MFTRecordDump,$FNArrOffset[6][$number]+16,2048-$FNArrOffset[6][$number])
+					$MFTRecordDump = StringMid($MFTRecordDump,1,$FNArrOffset[6][$number]-1) & $NewTimestampShifted & StringMid($MFTRecordDump,$FNArrOffset[6][$number]+16,($MFT_Record_Size*2)-$FNArrOffset[6][$number])
 				Case $DoAll4Timestamps
-					$MFTRecordDump = StringMid($MFTRecordDump,1,$FNArrOffset[3][$number]-1) & $NewTimestampShifted & $NewTimestampShifted & $NewTimestampShifted & $NewTimestampShifted & StringMid($MFTRecordDump,$FNArrOffset[6][$number]+16,2048-$FNArrOffset[6][$number])
+					$MFTRecordDump = StringMid($MFTRecordDump,1,$FNArrOffset[3][$number]-1) & $NewTimestampShifted & $NewTimestampShifted & $NewTimestampShifted & $NewTimestampShifted & StringMid($MFTRecordDump,$FNArrOffset[6][$number]+16,($MFT_Record_Size*2)-$FNArrOffset[6][$number])
 			EndSelect
 		Next
 	EndIf
 
 ; fixup
-	$someoff = 3+($UpdSeqArrOffset*2)
-	$a0 = StringMid($MFTRecordDump,1,$someoff+3)
-	$a1 = StringMid($MFTRecordDump,$someoff+4,4)
-	$a2 = StringMid($MFTRecordDump,$someoff+8,4)
-	$a7 = StringMid($MFTRecordDump,$someoff+12,4)
-	$a3 = StringMid($MFTRecordDump,$someoff+16,1023-($someoff+16))
-	$a4 = StringMid($MFTRecordDump,1023,4)
-	$a5 = StringMid($MFTRecordDump,1027,1020)
-	$a6 = StringMid($MFTRecordDump,2047,4)
-	$MFTRecordDump = $a0 & $a4 & $a6 & $a7 & $a3 & $UpdSeqArrPart0 & $a5 & $UpdSeqArrPart0
+	$OffsetToUsa = 3+($UpdSeqArrOffset*2) ;offset of usa ()
+	If $MFT_Record_Size = 1024 Then
+		$RecordHeaderBeforeUsa = StringMid($MFTRecordDump,1,$OffsetToUsa-1) ;Record header up until usa
+		$UpdateSequenceNumber = StringMid($MFTRecordDump,$OffsetToUsa,4)
+		$UsaPart1 = StringMid($MFTRecordDump,1023,4)
+		$UsaPart2 = StringMid($MFTRecordDump,2047,4)
+		$RecordSector1Rest = StringMid($MFTRecordDump,$OffsetToUsa+12,1023-($OffsetToUsa+12)) ;From end of usa and until end of sector 1
+		$RecordSector2 = StringMid($MFTRecordDump,1027,1020)
+		$MFTRecordDump = $RecordHeaderBeforeUsa & $UpdateSequenceNumber & $UsaPart1 & $UsaPart2 & $RecordSector1Rest & $UpdateSequenceNumber & $RecordSector2 & $UpdateSequenceNumber
+	ElseIf $MFT_Record_Size = 4096 Then
+		$RecordHeaderBeforeUsa = StringMid($MFTRecordDump,1,$OffsetToUsa-1) ;Record header up until usa
+		$UpdateSequenceNumber = StringMid($MFTRecordDump,$OffsetToUsa,4)
+		$UsaPart1 = StringMid($MFTRecordDump,1023,4)
+		$UsaPart2 = StringMid($MFTRecordDump,2047,4)
+		$UsaPart3 = StringMid($MFTRecordDump,3071,4)
+		$UsaPart4 = StringMid($MFTRecordDump,4095,4)
+		$UsaPart5 = StringMid($MFTRecordDump,5119,4)
+		$UsaPart6 = StringMid($MFTRecordDump,6143,4)
+		$UsaPart7 = StringMid($MFTRecordDump,7167,4)
+		$UsaPart8 = StringMid($MFTRecordDump,8191,4)
+		$RecordSector1Rest = StringMid($MFTRecordDump,$OffsetToUsa+36,1023-($OffsetToUsa+36)) ;From end of usa and until end of sector 1
+		$RecordSector2 = StringMid($MFTRecordDump,1027,1020)
+		$RecordSector3 = StringMid($MFTRecordDump,2051,1020)
+		$RecordSector4 = StringMid($MFTRecordDump,3075,1020)
+		$RecordSector5 = StringMid($MFTRecordDump,4099,1020)
+		$RecordSector6 = StringMid($MFTRecordDump,5123,1020)
+		$RecordSector7 = StringMid($MFTRecordDump,6147,1020)
+		$RecordSector8 = StringMid($MFTRecordDump,7171,1020)
+		$MFTRecordDump = $RecordHeaderBeforeUsa & $UpdateSequenceNumber & $UsaPart1 & $UsaPart2 & $UsaPart3 & $UsaPart4 & $UsaPart5 & $UsaPart6 & $UsaPart7 & $UsaPart8 & $RecordSector1Rest & $UpdateSequenceNumber & $RecordSector2 & $UpdateSequenceNumber & $RecordSector3 & $UpdateSequenceNumber & $RecordSector4 & $UpdateSequenceNumber & $RecordSector5 & $UpdateSequenceNumber & $RecordSector6 & $UpdateSequenceNumber & $RecordSector7 & $UpdateSequenceNumber & $RecordSector8 & $UpdateSequenceNumber
+	Else
+		ConsoleWrite("Error: MFT record size incorrect: " & $MFT_Record_Size & @crlf)
+		Exit
+	EndIf
 	;ConsoleWrite("Dump of modified record " & @crlf)
 	;ConsoleWrite(_HexEncode($MFTRecordDump) & @crlf)
 
-;Put modified MFT entry into new buffer
-	Local $tBuffer2 = DllStructCreate("byte[" & 1024 & "]")
+	;Determine correct registry location
+	If @AutoItX64 Then
+		;ConsoleWrite("64-bit mode" & @CRLF)
+		$RegRoot = "HKLM64"
+	Else
+		;ConsoleWrite("32-bit mode" & @CRLF)
+		$RegRoot = "HKLM"
+	EndIf
+
+	If @OSArch = "X86" Then
+		$DriverFile = @ScriptDir&"\sectorio.sys"
+		$TargetRCDataNumber = 1
+	Else
+		$DriverFile = @ScriptDir&"\sectorio64.sys"
+		$TargetRCDataNumber = 2
+	EndIf
+
+	Local $ServiceName = $Drivername
+
+	;Put modified MFT entry into new buffer
+	Local $tBuffer2 = DllStructCreate("byte[" & $MFT_Record_Size & "]")
 	DllStructSetData($tBuffer2,1,$MFTRecordDump)
+
+	If _PrepareDriver() Then
+		;Try to write with driver
+		Local $DriverJobOk = _SectorIo($TargetDrive, $DiskOffset, $tBuffer2)
+		If Not @error or $DriverJobOk>0 Then
+			_NtUnloadDriver($ServiceName)
+			FileDelete($DriverFile)
+			RegDelete($RegRoot & "\SYSTEM\CurrentControlSet\Services\" & $ServiceName)
+			ConsoleWrite("Success writing timestamps to disk at offset 0x" & Hex($DriverJobOk) & @crlf)
+			Return
+		Else
+			_NtUnloadDriver($ServiceName)
+			FileDelete($DriverFile)
+			RegDelete($RegRoot & "\SYSTEM\CurrentControlSet\Services\" & $ServiceName)
+			ConsoleWrite("Error writing timestamps to disk with driver" & @crlf)
+		EndIf
+	Else
+		ConsoleWrite("Error loading driver" & @crlf)
+	EndIf
+	ConsoleWrite("Attempting write to physical disk without driver" & @crlf)
+
+	;If driver failed, try basic method with WriteFile
+	If @OSBuild >= 6000 And $NeedLock Then
+		If StringLeft(@AutoItExe,2) = $TargetDrive Then
+			ConsoleWrite("Error: You can't lock the volume that SetMace is run from" & @crlf)
+			Exit
+		EndIf
+		$hFile = _WinAPI_LockVolume($TargetDrive)
+		If @error Then
+			$hFile = _WinAPI_DismountVolumeMod($TargetDrive)
+			If $hFile = 0 Then
+				ConsoleWrite("Error: Could not dismount " & $TargetDrive & @CRLF)
+				Exit
+			EndIf
+			ConsoleWrite("Success dismounting " & $TargetDrive & @CRLF)
+			$IsDismounted = 1
+		Else
+			$IsLocked = 1
+			ConsoleWrite("Successfully locked " & $TargetDrive & @CRLF)
+		EndIf
+	Else
+		Local $hFile = _WinAPI_CreateFile("\\.\" & $TargetDrive,2,6,7)
+		If $hFile = 0 then
+			ConsoleWrite("Error: " & _WinAPI_GetLastErrorMessage() & " in CreateFile for: " & "\\.\" & $TargetDrive & @crlf)
+			Exit
+		EndIf
+	EndIf
 	_WinAPI_SetFilePointerEx($hFile, $DiskOffset)
-	_WinAPI_WriteFile($hFile, DllStructGetPtr($tBuffer2), 1024, $nBytes)
+	_WinAPI_WriteFile($hFile, DllStructGetPtr($tBuffer2), $MFT_Record_Size, $nBytes)
 	If _WinAPI_GetLastError() <> 0 Then
 		ConsoleWrite("Error: WriteFile returned: " & _WinAPI_GetLastErrorMessage() & @crlf)
+		_WinAPI_CloseHandle($hFile)
 		Exit
 	Else
 		ConsoleWrite("Success writing timestamps" & @crlf)
 	EndIf
 	_WinAPI_FlushFileBuffers($hFile)
 	_WinAPI_CloseHandle($hFile)
-
-; Not really needed anyway since the locks on the volume are unlocked when this process exits anyway
-	Select
-		Case @OSBuild >= 6000 AND $IsLocked = 1
-			_WinAPI_UnLockVolume($TargetDrive)
-		Case @OSBuild >= 6000 AND $IsDismounted = 1
-;			_WinAPI_CloseHandle($lock[2])
-		Case @OSBuild < 6000
-	EndSelect
 EndFunc
 
+Func _PrepareDriver()
+	;Determine correct registry location
+	If @AutoItX64 Then
+		;ConsoleWrite("64-bit mode" & @CRLF)
+		$RegRoot = "HKLM64"
+	Else
+		;ConsoleWrite("32-bit mode" & @CRLF)
+		$RegRoot = "HKLM"
+	EndIf
+
+	If @OSArch = "X86" Then
+		$DriverFile = @ScriptDir&"\sectorio.sys"
+		$TargetRCDataNumber = 1
+	Else
+		$DriverFile = @ScriptDir&"\sectorio64.sys"
+		$TargetRCDataNumber = 2
+	EndIf
+
+	Local $ServiceName = $Drivername
+	Local $ImagePath = "\??\"&$DriverFile
+
+	;Write registry information for service
+	RegWrite($RegRoot & "\SYSTEM\CurrentControlSet\Services\" & $ServiceName)
+	RegWrite($RegRoot&"\SYSTEM\CurrentControlSet\Services\"&$ServiceName,"","REG_SZ","")
+	RegWrite($RegRoot&"\SYSTEM\CurrentControlSet\Services\"&$ServiceName,"Type","REG_DWORD",1)
+	RegWrite($RegRoot&"\SYSTEM\CurrentControlSet\Services\"&$ServiceName,"ImagePath","REG_EXPAND_SZ",$ImagePath)
+	RegWrite($RegRoot&"\SYSTEM\CurrentControlSet\Services\"&$ServiceName,"Start","REG_DWORD",3)
+	RegWrite($RegRoot&"\SYSTEM\CurrentControlSet\Services\"&$ServiceName,"ErrorControl","REG_DWORD",1)
+
+	;Set permission to load drivers
+	_SetPrivilege("SeLoadDriverPrivilege")
+	If @error Then
+		ConsoleWrite("Error assigning SeLoadDriverPrivilege" & @CRLF)
+		return 0
+	EndIf
+
+	;Get driver from resource
+	_WriteFileFromResource($DriverFile,$TargetRCDataNumber)
+	If @error Or FileExists($DriverFile)=0 Then
+		ConsoleWrite("Error finding driver" & @CRLF)
+		FileDelete($DriverFile)
+		return 0
+	EndIf
+
+	;Load driver
+	_NtLoadDriver($ServiceName)
+	If @error Then
+		RegDelete($RegRoot & "\SYSTEM\CurrentControlSet\Services\" & $ServiceName)
+		FileDelete($DriverFile)
+		return 0
+	EndIf
+	return 1
+EndFunc
 
 Func _config_timestamp()
 	Local $timestamp_array, $input2LocalFileTime[9]
@@ -2659,4 +2856,228 @@ Func _PrintHelp()
 	ConsoleWrite('setmace.exe C:\$MFT -d' & @CRLF)
 	ConsoleWrite('or' & @CRLF)
 	ConsoleWrite('setmace.exe C:0 -d' & @CRLF)
+EndFunc
+
+Func _NtLoadDriver($TargetServiceName)
+	$FullServiceName = "\Registry\Machine\SYSTEM\CurrentControlSet\Services\"&$TargetServiceName
+	$szName = DllStructCreate("wchar[260]")
+	$sUS = DllStructCreate($tagUNICODESTRING)
+	DllStructSetData($szName, 1, $FullServiceName)
+	$ret = DllCall("ntdll.dll", "none", "RtlInitUnicodeString", "ptr", DllStructGetPtr($sUS), "ptr", DllStructGetPtr($szName))
+	$ret = DllCall("ntdll.dll", "int", "NtLoadDriver","ptr",DllStructGetPtr($sUS))
+	If Not NT_SUCCESS($ret[0]) And $ret[0] <> 0xC000010E Then
+		ConsoleWrite("Error: NtLoadDriver: 0x" & Hex($ret[0])& @CRLF)
+		Return SetError(1,0,0)
+	EndIf
+EndFunc
+
+Func _NtUnloadDriver($TargetServiceName)
+	$FullServiceName = "\Registry\Machine\SYSTEM\CurrentControlSet\Services\"&$TargetServiceName
+	$szName = DllStructCreate("wchar[260]")
+	$sUS = DllStructCreate($tagUNICODESTRING)
+	DllStructSetData($szName, 1, $FullServiceName)
+	$ret = DllCall("ntdll.dll", "none", "RtlInitUnicodeString", "ptr", DllStructGetPtr($sUS), "ptr", DllStructGetPtr($szName))
+	$ret = DllCall("ntdll.dll", "int", "NtUnloadDriver","ptr",DllStructGetPtr($sUS))
+	If Not NT_SUCCESS($ret[0]) Then
+		ConsoleWrite("Error: NtUnloadDriver: 0x" & Hex($ret[0])& @CRLF)
+		Return SetError(1,0,0)
+	EndIf
+EndFunc
+
+Func _SetPrivilege($Privilege)
+    Local $tagLUIDANDATTRIB = "int64 Luid;dword Attributes"
+    Local $count = 1
+    Local $tagTOKENPRIVILEGES = "dword PrivilegeCount;byte LUIDandATTRIB[" & $count * 12 & "]"
+    Local $TOKEN_ADJUST_PRIVILEGES = 0x20
+    Local $SE_PRIVILEGE_ENABLED = 0x2
+
+    Local $curProc = DllCall("kernel32.dll", "ptr", "GetCurrentProcess")
+	Local $call = DllCall("advapi32.dll", "int", "OpenProcessToken", "ptr", $curProc[0], "dword", $TOKEN_ALL_ACCESS, "ptr*", "")
+    If Not $call[0] Then Return False
+    Local $hToken = $call[3]
+
+    $call = DllCall("advapi32.dll", "int", "LookupPrivilegeValue", "str", "", "str", $Privilege, "int64*", "")
+    Local $iLuid = $call[3]
+
+    Local $TP = DllStructCreate($tagTOKENPRIVILEGES)
+	Local $TPout = DllStructCreate($tagTOKENPRIVILEGES)
+    Local $LUID = DllStructCreate($tagLUIDANDATTRIB, DllStructGetPtr($TP, "LUIDandATTRIB"))
+
+    DllStructSetData($TP, "PrivilegeCount", $count)
+    DllStructSetData($LUID, "Luid", $iLuid)
+    DllStructSetData($LUID, "Attributes", $SE_PRIVILEGE_ENABLED)
+
+    $call = DllCall("advapi32.dll", "int", "AdjustTokenPrivileges", "ptr", $hToken, "int", 0, "ptr", DllStructGetPtr($TP), "dword", DllStructGetSize($TPout), "ptr", DllStructGetPtr($TPout), "dword*", 0)
+	$lasterror = _WinAPI_GetLastError()
+	If $lasterror <> 0 Then
+		ConsoleWrite("AdjustTokenPrivileges ("&$Privilege&"): " & _WinAPI_GetLastErrorMessage() & @CRLF)
+		DllCall("kernel32.dll", "int", "CloseHandle", "ptr", $hToken)
+		Return SetError(1, 0, 0)
+	EndIf
+    DllCall("kernel32.dll", "int", "CloseHandle", "ptr", $hToken)
+    Return ($call[0] <> 0)
+EndFunc
+
+Func _DeviceIoControl($hFile, $IoControlCode, $InputBuffer, $OutputBuffer)
+	Local $Ret = DllCall('kernel32.dll', 'int', 'DeviceIoControl', 'ptr', $hFile, 'dword', $IoControlCode, 'ptr', DllStructGetPtr($InputBuffer), "ulong", DllStructGetSize($InputBuffer), 'ptr', DllStructGetPtr($OutputBuffer), "ulong", DllStructGetSize($OutputBuffer), 'dword*', 0, 'ptr', 0)
+	;ConsoleWrite("DeviceIoControl: 0x" & Hex($Ret[0]) & @CRLF)
+	If (@error) Or (Not $Ret[0]) Then
+		ConsoleWrite("Error in DeviceIoControl: " & _WinAPI_GetLastErrorMessage() & @CRLF)
+		_WinAPI_CloseHandle($hFile)
+		Return SetError(1, 0, 0)
+	EndIf
+	Return $OutputBuffer
+EndFunc
+
+Func _SectorIo($TargetVolume,$VolumeOffsetForWrite,$GarbadgeData)
+	Local $DiskOffsetForWrite, $PhysicalDriveNoN, $dwDiskObjOrdinal, $ullSectorNumber, $bIsRawDisk = 1, $TargetDevice = "\\.\sectorio", $DriverFile, $TargetRCDataNumber
+	Local $tagDISK_LOCATION = "align 1;byte bIsRawDisk;dword dwDiskObjOrdinal;uint64 ullSectorNumber"
+	Local $IOCTL_CODE_READ=0x8000E000
+	Local $IOCTL_CODE_WRITE=0x8000E004
+	Local $IOCTL_CODE_GET_SECTOR_SIZE=0x8000E008
+	Local $NewDataSize=DllStructGetSize($GarbadgeData)
+	If @error Or $MFT_Record_Size<>$NewDataSize Then
+		ConsoleWrite("Error new MFT record buffer invalid" & @CRLF)
+		return 0
+	EndIf
+
+	;Check offset
+	If $VolumeOffsetForWrite = 0 Then
+		ConsoleWrite("Error volume offset invalid" & @CRLF)
+		return 0
+	EndIf
+
+	;Resolve physical offset of volume
+	$PartitionInfo = _WinAPI_GetPartitionInfoEx($TargetVolume)
+	If @error Then return 0
+	$DiskOffsetForWrite = $VolumeOffsetForWrite + $PartitionInfo[1]
+	If $DiskOffsetForWrite = 0 Then
+		ConsoleWrite("Error disk offset invalid" & @CRLF)
+		return 0
+	EndIf
+
+	;Determine sector number
+	$ullSectorNumber = $DiskOffsetForWrite/$BytesPerSector
+
+	;Work out which PhysicalDrive the volume is on
+	If StringLen($TargetVolume)<>2 Then $TargetVolume = StringMid($TargetVolume,1,2)
+	$PhysicalDriveN = _WinAPI_GetDriveNumber($TargetVolume)
+	If @error Then
+		ConsoleWrite("Error in GetDriveNumber: " & _WinAPI_GetLastErrorMessage() & @CRLF)
+		Return 0
+	EndIf
+	$dwDiskObjOrdinal = $PhysicalDriveN[1]
+	;ConsoleWrite("Volume resolved to \\.\PhysicalDrive " & $dwDiskObjOrdinal & @CRLF)
+
+	;Prepare buffers
+	Local $TestBuffer = DllStructCreate("byte["&$NewDataSize+13&"]")
+	If @error Then return 0
+	Local $pDISK_LOCATION = DllStructCreate($tagDISK_LOCATION,DllStructGetPtr($TestBuffer))
+	If @error Then return 0
+	DllStructSetData($pDISK_LOCATION,"bIsRawDisk",$bIsRawDisk)
+	If @error Then return 0
+	DllStructSetData($pDISK_LOCATION,"dwDiskObjOrdinal",$dwDiskObjOrdinal)
+	If @error Then return 0
+	DllStructSetData($pDISK_LOCATION,"ullSectorNumber",$ullSectorNumber)
+	If @error Then return 0
+	Local $pGARBADGE = DllStructCreate("byte["&$NewDataSize&"]",DllStructGetPtr($TestBuffer)+13)
+	If @error Then return 0
+	;DllStructSetData($pGARBADGE,1,'0x'&$GarbadgeData)
+	DllStructSetData($pGARBADGE,1,DllStructGetData($GarbadgeData,1))
+	If @error Then return 0
+	Local $NewRecordBuff = DllStructCreate("byte["&DllStructGetSize($TestBuffer)&"]",DllStructGetPtr($TestBuffer))
+	If @error Then return 0
+	;This one is strictly not needed here, and only required with read operations
+	Local $OutputBuff2 = DllStructCreate("byte["&$NewDataSize&"]")
+	If @error Then return 0
+
+	;Create handle to device
+	$hDevice = _WinAPI_CreateFileEx($TargetDevice, $OPEN_EXISTING, BitOR($GENERIC_READ,$GENERIC_WRITE), BitOR($FILE_SHARE_READ,$FILE_SHARE_WRITE),$FILE_ATTRIBUTE_NORMAL)
+	If Not $hDevice Then
+		ConsoleWrite("Error in CreateFile for " & $TargetDevice & " : " & _WinAPI_GetLastErrorMessage() & @CRLF)
+		;_NtUnloadDriver($ServiceName)
+		;FileDelete($DriverFile)
+		;RegDelete($RegRoot & "\SYSTEM\CurrentControlSet\Services\" & $ServiceName)
+		return 0
+	EndIf
+
+	;Send buffer with data and ioctl to driver
+	Local $ResultBuffer2 = _DeviceIoControl($hDevice, $IOCTL_CODE_WRITE, $NewRecordBuff, 0)
+	If @error Then
+		DllCall("ntdll.dll", "int", "NtClose","handle",$hDevice)
+		;_NtUnloadDriver($ServiceName)
+		;FileDelete($DriverFile)
+		;RegDelete($RegRoot & "\SYSTEM\CurrentControlSet\Services\" & $ServiceName)
+		return 0
+	Else
+		DllCall("ntdll.dll", "int", "NtClose","handle",$hDevice)
+		;_NtUnloadDriver($ServiceName)
+		;FileDelete($DriverFile)
+		;RegDelete($RegRoot & "\SYSTEM\CurrentControlSet\Services\" & $ServiceName)
+		Return $DiskOffsetForWrite
+	EndIf
+EndFunc
+
+Func _WinAPI_GetPartitionInfoEx($iVolume)
+	Local $hFile = _WinAPI_CreateFileEx('\\.\' & $iVolume, 3, 0, 0x03)
+	If @error Then
+		Return SetError(1, 0, 0)
+	EndIf
+	Local $pPARTITION_INFORMATION_EX = DllStructCreate("byte;uint64;uint64;dword;byte;byte[116]") ;GPT
+	Local $Ret = DllCall('kernel32.dll', 'int', 'DeviceIoControl', 'ptr', $hFile, 'dword', $IOCTL_DISK_GET_PARTITION_INFO_EX, 'ptr', 0, 'dword', 0, 'ptr', DllStructGetPtr($pPARTITION_INFORMATION_EX), 'dword', DllStructGetSize($pPARTITION_INFORMATION_EX), 'dword*', 0, 'ptr', 0)
+	If (@error) Or (Not $Ret[0]) Then
+		ConsoleWrite("IOCTL_DISK_GET_PARTITION_INFO_EX: " & _WinAPI_GetLastErrorMessage() & @CRLF)
+		$Ret = 0
+	EndIf
+	_WinAPI_CloseHandle($hFile)
+	If Not IsArray($Ret) Then
+		Return SetError(2, 0, 0)
+	EndIf
+
+	Local $Result[6]
+	For $i = 0 To 5
+		$Result[$i] = DllStructGetData($pPARTITION_INFORMATION_EX, $i + 1)
+	Next
+	Return $Result
+EndFunc
+
+Func _WriteFileFromResource($OutPutName,$RCDataNumber)
+	If FileExists($OutPutName) Then FileDelete($OutPutName)
+	If Not FileExists($OutPutName) Then
+		Local $hResource = _WinAPI_FindResource(0, 10, '#'&$RCDataNumber)
+		If @error Or $hResource = 0 Then
+			ConsoleWrite("Error: Resource not found" & @CRLF)
+			Return SetError(1, 0, 0)
+		EndIf
+		Local $iSize = _WinAPI_SizeOfResource(0, $hResource)
+		If @error Or $iSize = 0 Then
+			ConsoleWrite("Error: Resource size not retrieved" & @CRLF)
+			Return SetError(1, 0, 0)
+		EndIf
+		Local $hData = _WinAPI_LoadResource(0, $hResource)
+		If @error Or $hData = 0 Then
+			ConsoleWrite("Error: Resource could not be loaded" & @CRLF)
+			Return SetError(1, 0, 0)
+		EndIf
+		Local $pData = _WinAPI_LockResource($hData)
+		If @error Or $pData = 0 Then
+			ConsoleWrite("Error: Resource not locked" & @CRLF)
+			Return SetError(1, 0, 0)
+		EndIf
+		Local $tBuffer=DllStructCreate('align 1;byte STUB['&$iSize&']', $pData)
+		Local $DriverData = DllStructGetData($tBuffer,'STUB')
+		If @error or $DriverData = "" Then
+			ConsoleWrite("Error: Could not put driver data into buffer" & @CRLF)
+			Return SetError(1, 0, 0)
+		EndIf
+		Local $hFile = FileOpen($OutPutName,2)
+		If Not FileWrite($hFile,$DriverData) Then
+			ConsoleWrite("Error: Could not write driver file" & @CRLF)
+			Return SetError(1, 0, 0)
+		EndIf
+		FileClose($hFile)
+		Return 1
+	Else
+		Return 1
+	EndIf
 EndFunc
