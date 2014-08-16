@@ -1,0 +1,21 @@
+
+v1.0.0.13: Implemented fix for forcing Windows to synchronize the $STANDARD_INFORMATION timestamps to the ones indexed in the INDX of the parent. Added support for dumping timestamps from INDX in the parent.
+
+v1.0.0.12: Added support for MFT record size of 4096 bytes. Added attempts at both methods of writing to physical disk. 
+
+v1.0.0.11: Included signed drivers, so it also works with just TESTSIGNING on x64. 
+
+v1.0.0.10: Implemented a kernel mode driver for writing modified MFT record back to disk.
+
+v1.0.0.9: Added support for dumping timestamp information also from within shadow copies with the -d switch.
+
+v1.0.0.8: Fixed mixup up of mapping for LastAccessTime, LastWriteTime and ChangeTime(MFT). Fixed bug in logic for lock/dismount handling of external drives and nt5.x vs nt6.x. Fixed a bug that caused only last $FILE_NAME timestamps to be displayed/written, instead of for all $FILE_NAME attributes.
+
+v1.0.0.7: Re-written to only implement direct physical disk writing of timestamps. Fix for opening locked/protected files. Added support for unlimited amount of $FILE_NAME attributes to modify. Also now works faster.
+
+v1.0.0.6: Lots of minor stuff changed, and in particular better feedback on console. New feature of allowing WriteFile() on PhysicalDisk.
+
+v1.0.0.5: Complete support for dumping and writing of $FILE_NAME timestamps for both files and directories.
+
+v1.0.0.4: Added support for directories.
+

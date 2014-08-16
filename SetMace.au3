@@ -1,9 +1,9 @@
 #RequireAdmin
 #Region ;**** Directives created by AutoIt3Wrapper_GUI ****
 #AutoIt3Wrapper_Change2CUI=y
-#AutoIt3Wrapper_Res_Comment=Timestamp manipulation
-#AutoIt3Wrapper_Res_Description=Change any file timestamp by using low level disk access
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.12
+#AutoIt3Wrapper_Res_Comment=Timestamp manipulation on NTFS
+#AutoIt3Wrapper_Res_Description=Change or dump any file timestamp by using low level disk access
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.13
 #AutoIt3Wrapper_Res_LegalCopyright=Joakim Schicht
 #AutoIt3Wrapper_Res_requestedExecutionLevel=asInvoker
 #AutoIt3Wrapper_Res_File_Add=C:\tmp\sectorio.sys
@@ -32,7 +32,7 @@ Global $LockedFileName,$DirArray,$NeedIndx=0, $ResidentIndx, $AttributesArr[18][
 Global $TargetImageFile, $Entries, $InputFile, $IsShadowCopy=False, $IsPhysicalDrive=False, $IsImage=False, $hDisk, $sBuffer, $ComboPhysicalDrives, $Combo
 Global $OutPutPath=@ScriptDir, $InitState = False, $DATA_Clusters, $AttributeOutFileName, $DATA_InitSize, $ImageOffset, $ADS_Name, $IndexNumber, $NonResidentFlag, $DATA_RealSize, $DataRun, $DATA_LengthOfAttribute
 Global $TargetDrive = "", $ALInnerCouner, $MFTSize, $TargetOffset, $SectorsPerCluster,$MFT_Record_Size,$BytesPerCluster,$BytesPerSector,$MFT_Offset,$IsDirectory
-Global $IsolatedAttributeList, $AttribListNonResident=0,$IsCompressed,$IsSparse, $_COMMON_KERNEL32DLL=DllOpen("kernel32.dll"),$Drivername = "sectorio"
+Global $IsolatedAttributeList, $AttribListNonResident=0,$IsCompressed,$IsSparse, $_COMMON_KERNEL32DLL=DllOpen("kernel32.dll"),$Drivername = "sectorio", $IndxOffsetArray, $ParentMode=0, $IndxCTimeFromParent,$IndxATimeFromParent,$IndxMTimeFromParent,$IndxRTimeFromParent
 Global $RUN_VCN[1],$RUN_Clusters[1],$MFT_RUN_Clusters[1],$MFT_RUN_VCN[1],$DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1],$sBuffer,$AttrQ[1]
 Global $IndxEntryNumberArr[1],$IndxMFTReferenceArr[1],$IndxMFTRefSeqNoArr[1],$IndxIndexFlagsArr[1],$IndxMFTReferenceOfParentArr[1],$IndxMFTParentRefSeqNoArr[1],$IndxCTimeArr[1],$IndxATimeArr[1],$IndxMTimeArr[1],$IndxRTimeArr[1],$IndxAllocSizeArr[1],$IndxRealSizeArr[1],$IndxFileFlagsArr[1],$IndxFileNameArr[1],$IndxSubNodeVCNArr[1],$IndxNameSpaceArr[1]
 Global $IRArr[12][2],$IndxArr[20][2]
@@ -69,7 +69,7 @@ Global Const $tagFILEINTERNALINFORMATION = "int IndexNumber;"
 Global $Timerstart = TimerInit()
 
 ConsoleWrite("Starting SetMace by Joakim Schicht" & @CRLF)
-ConsoleWrite("Version 1.0.0.12" & @CRLF & @CRLF)
+ConsoleWrite("Version 1.0.0.13" & @CRLF & @CRLF)
 
 If Not $cmdline[0] Then
 	ConsoleWrite("Error: Missing parameters" & @CRLF)
@@ -111,6 +111,7 @@ $IsFirstRun=0
 $IndexNumberBak = $IndexNumber
 _MainLoop()
 
+;With dump mode, search through each and every ShadowCopy for a match
 If $DoRead Then
 	$k=1
 	$sDrivePath = '\\.\GLOBALROOT\Device\HarddiskVolumeShadowCopy'
@@ -142,84 +143,101 @@ If $DoRead Then
 		$k+=1
 	Until $hDisk=0
 EndIf
+_GetIndexNumber($TargetFileName, 0) ;Making this call will make sure the timestamps in INDX of parent is properly populated
 _End($Timerstart)
 
 Func _MainLoop()
-Local $RetRec[2]
-If StringIsDigit($IndexNumber) Then
-	Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1]
-	$RetRec = _FindFileMFTRecord($IndexNumber)
-	$NewRecord = $RetRec[1]
-	_DecodeMFTRecord($NewRecord,1)
-	_DecodeNameQ($NameQ)
-	_Main($RetRec[0],$IndexNumber)
-	Return
-EndIf
+	Local $RetRec[2]
+	;If file is defined by indexnumber, skip going through INDX of parent (faster)
+	If StringIsDigit($IndexNumber) Then
+		Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1]
+		$RetRec = _FindFileMFTRecord($IndexNumber)
+		$NewRecord = $RetRec[1]
+		_DecodeMFTRecord($NewRecord,1)
+		_DecodeNameQ($NameQ)
+		_Main($RetRec[0],$IndexNumber)
+		Return
+	EndIf
 
-$IndexNumber = _GetIndexNumber($TargetFileName, $IsDirectory)
-If Not StringIsDigit($IndexNumber) Or @error Then
+	;Force going through INDX of parent, which is more powerful
+	$IndexNumber = _GetIndexNumber($TargetFileName, $IsDirectory)
+	If Not StringIsDigit($IndexNumber) Or @error Then
+		$NeedIndx = 1
+	EndIf
 	$NeedIndx = 1
-EndIf
 
-If Not $NeedIndx Then
-	Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1]
+	$ParentMode=1
+	If Not $NeedIndx Then
+		Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1]
+		$RetRec = _FindFileMFTRecord($IndexNumber)
+		$NewRecord = $RetRec[1]
+		_DecodeMFTRecord($NewRecord,1)
+		_Main($RetRec[0],$IndexNumber)
+		Return
+	ElseIf $NeedIndx Then
+		ConsoleWrite("Trying with INDX method from parent folder: " & $ParentDir & @CRLF)
+		$IndexNumber = _GetIndexNumber($ParentDir, 1)
+		If @error Then
+			ConsoleWrite("Error: Cannot get IndexNumber of parent folder" & @CRLF)
+			Exit
+		EndIf
+		$LockedFileName = $DirArray[$DirArray[0]]
+		$NeedExtraction=0
+	EndIf
 	$RetRec = _FindFileMFTRecord($IndexNumber)
 	$NewRecord = $RetRec[1]
 	_DecodeMFTRecord($NewRecord,1)
-	_Main($RetRec[0],$IndexNumber)
-	Return
-ElseIf $NeedIndx Then
-	ConsoleWrite("Trying with INDX method from parent folder: " & $ParentDir & @CRLF)
-	$IndexNumber = _GetIndexNumber($ParentDir, 1)
-	If @error Then
-		ConsoleWrite("Error: Cannot get IndexNumber of parent folder" & @CRLF)
-		Exit
-	EndIf
-	$LockedFileName = $DirArray[$DirArray[0]]
-	$NeedExtraction=0
-EndIf
-$RetRec = _FindFileMFTRecord($IndexNumber)
-$NewRecord = $RetRec[1]
-_DecodeMFTRecord($NewRecord,1)
 
-If $NeedIndx Then
-	If $AttributesArr[10][2] = "TRUE" Then; $INDEX_ALLOCATION
-		For $j = 1 To Ubound($IndxFileNameArr)-1
-			If $IndxFileNameArr[$j] = $LockedFileName Then
-				$DATA_Name = $LockedFileName
-				$NeedExtraction = 1
-				$IndexNumber = $IndxMFTReferenceArr[$j]
-				Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1]
-				$RetRef = $IndxMFTReferenceArr[$j]
-				$RetRec = _FindFileMFTRecord($IndxMFTReferenceArr[$j])
-				$NewRecord = $RetRec[1]
-				_DecodeMFTRecord($NewRecord,1)
-				_Main($RetRec[0],$RetRef)
-				Return
-			EndIf
-		Next
-	ElseIf $AttributesArr[9][2] = "TRUE" And $ResidentIndx Then ; $INDEX_ROOT
-		For $j = 1 To Ubound($IndxFileNameArr)-1
-			If $IndxFileNameArr[$j] = $LockedFileName Then
-				$DATA_Name = $LockedFileName
-				$NeedExtraction = 1
-				$IndexNumber = $IndxMFTReferenceArr[$j]
-				Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1]
-				$RetRef = $IndxMFTReferenceArr[$j]
-				$RetRec = _FindFileMFTRecord(Int($IndxMFTReferenceArr[$j],2))
-				$NewRecord = $RetRec[1]
-				_DecodeMFTRecord($NewRecord,1)
-				_Main($RetRec[0],$RetRef)
-				Return
-			EndIf
-		Next
-		Exit
-	Else
-		ConsoleWrite("Error: There was no index found for the parent folder." & @CRLF)
-		Exit
+	;_ArrayDisplay($IndxOffsetArray,"$IndxOffsetArray")
+
+	If $NeedIndx Then
+		If $AttributesArr[10][2] = "TRUE" Then; $INDEX_ALLOCATION
+			For $j = 1 To Ubound($IndxFileNameArr)-1
+				If $IndxFileNameArr[$j] = $LockedFileName Then
+					$DATA_Name = $LockedFileName
+					$NeedExtraction = 1
+					$IndexNumber = $IndxMFTReferenceArr[$j]
+					$IndxCTimeFromParent = $IndxCTimeArr[$j]
+					$IndxATimeFromParent = $IndxATimeArr[$j]
+					$IndxMTimeFromParent = $IndxMTimeArr[$j]
+					$IndxRTimeFromParent = $IndxRTimeArr[$j]
+					Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1]
+					$RetRef = $IndxMFTReferenceArr[$j]
+					$RetRec = _FindFileMFTRecord($IndxMFTReferenceArr[$j])
+					$NewRecord = $RetRec[1]
+					_DecodeMFTRecord($NewRecord,1)
+					_Main($RetRec[0],$RetRef)
+					;_GetIndexNumber($TargetFileName, 0) ;Making this call will make sure the timestamps in INDX of parent is properly populated
+					Return
+				EndIf
+			Next
+		ElseIf $AttributesArr[9][2] = "TRUE" And $ResidentIndx Then ; $INDEX_ROOT
+			For $j = 1 To Ubound($IndxFileNameArr)-1
+				If $IndxFileNameArr[$j] = $LockedFileName Then
+					$DATA_Name = $LockedFileName
+					$NeedExtraction = 1
+					$IndexNumber = $IndxMFTReferenceArr[$j]
+					$IndxCTimeFromParent = $IndxCTimeArr[$j]
+					$IndxATimeFromParent = $IndxATimeArr[$j]
+					$IndxMTimeFromParent = $IndxMTimeArr[$j]
+					$IndxRTimeFromParent = $IndxRTimeArr[$j]
+					Global $DataQ[1],$AttribX[1],$AttribXType[1],$AttribXCounter[1]
+					$RetRef = $IndxMFTReferenceArr[$j]
+					$RetRec = _FindFileMFTRecord(Int($IndxMFTReferenceArr[$j],2))
+					$NewRecord = $RetRec[1]
+					_DecodeMFTRecord($NewRecord,1)
+					_Main($RetRec[0],$RetRef)
+					;_GetIndexNumber($TargetFileName, 0) ;Making this call will make sure the timestamps in INDX of parent is properly populated
+					Return
+				EndIf
+			Next
+			Exit
+		Else
+			ConsoleWrite("Error: There was no index found for the parent folder." & @CRLF)
+			Exit
+		EndIf
 	EndIf
-EndIf
-ConsoleWrite("Error: File not found." & @CRLF)
+	ConsoleWrite("Error: File not found." & @CRLF)
 EndFunc
 
 Func _GenDirArray($InPath)
@@ -1360,7 +1378,7 @@ Func NT_SUCCESS($status)
 EndFunc
 
 Func _GetAttributeEntry($Entry)
-	Local $CoreAttribute,$CoreAttributeTmp,$CoreAttributeArr[2]
+	Local $CoreAttribute,$CoreAttributeTmp,$CoreAttributeArr[2],$TestArray
 	Local $ATTRIBUTE_HEADER_Length,$ATTRIBUTE_HEADER_NonResidentFlag,$ATTRIBUTE_HEADER_NameLength,$ATTRIBUTE_HEADER_NameRelativeOffset,$ATTRIBUTE_HEADER_Name,$ATTRIBUTE_HEADER_Flags,$ATTRIBUTE_HEADER_AttributeID,$ATTRIBUTE_HEADER_StartVCN,$ATTRIBUTE_HEADER_LastVCN
 	Local $ATTRIBUTE_HEADER_VCNs,$ATTRIBUTE_HEADER_OffsetToDataRuns,$ATTRIBUTE_HEADER_CompressionUnitSize,$ATTRIBUTE_HEADER_Padding,$ATTRIBUTE_HEADER_AllocatedSize,$ATTRIBUTE_HEADER_RealSize,$ATTRIBUTE_HEADER_InitializedStreamSize,$RunListOffset
 	Local $ATTRIBUTE_HEADER_LengthOfAttribute,$ATTRIBUTE_HEADER_OffsetToAttribute,$ATTRIBUTE_HEADER_IndexedFlag
@@ -1542,7 +1560,13 @@ Func _GetAttributeEntry($Entry)
 ;							_DoNormalAttribute($hFile, $tBuffer)
 ;							Local $nBytes
 							$FileSize = $ATTRIBUTE_HEADER_RealSize
+							;An attempt at preparing for INDX modification
+							;Local $TestArray[UBound($RUN_VCN)][2]
+							;$TestArray[0][0] = "Offset"
+							;$TestArray[0][1] = "Bytes"
 							For $s = 1 To UBound($RUN_VCN)-1
+								;An attempt at preparing for INDX modification
+								;$TestArray[$s][0] = $RUN_VCN[$s]*$BytesPerCluster
 								_WinAPI_SetFilePointerEx($hFile, $RUN_VCN[$s]*$BytesPerCluster, $FILE_BEGIN)
 								$g = $RUN_Clusters[$s]
 								While $g > 16 And $FileSize > $BytesPerCluster * 16
@@ -1569,6 +1593,8 @@ Func _GetAttributeEntry($Entry)
 										$CoreAttribute &= $CoreAttributeTmp
 									EndIf
 								EndIf
+								;An attempt at preparing for INDX modification
+								;$TestArray[$s][1] = $nBytes
 							Next
 ;------------------_DoNormalAttribute()
 						EndIf
@@ -1583,6 +1609,9 @@ Func _GetAttributeEntry($Entry)
 	Next
 	$CoreAttributeArr[0] = $CoreAttribute
 	$CoreAttributeArr[1] = $ATTRIBUTE_HEADER_Name
+	;An attempt at preparing for INDX modification
+	;If $ATTRIBUTE_HEADER_Name = "$I30" Then $IndxOffsetArray = $TestArray
+
 	Return $CoreAttributeArr
 EndFunc
 
@@ -1681,6 +1710,8 @@ EndFunc
 Func _Get_IndexAllocation($Entry,$Current_Attrib_Number,$CurrentAttributeName)
 ;	ConsoleWrite("Starting function _Get_IndexAllocation()" & @crlf)
 	Local $NextPosition = 1,$IndxHdrMagic,$IndxEntries,$TotalIndxEntries
+;	ConsoleWrite("INDX record:" & @crlf)
+;	ConsoleWrite(_HexEncode("0x"& StringMid($Entry,1)) & @crlf)
 ;	ConsoleWrite("StringLen of chunk = " & StringLen($Entry) & @crlf)
 ;	ConsoleWrite("Expected records = " & StringLen($Entry)/8192 & @crlf)
 	$NextPosition = 1
@@ -2366,6 +2397,15 @@ Func _Main($DiskOffset,$TargetRef)
 			ConsoleWrite("ChangeTime(MFT): " & $FNArrValue[5][$testno] & @CRLF)
 			ConsoleWrite("LastAccessTime: " & $FNArrValue[6][$testno] & @CRLF & @CRLF)
 		Next
+		If $ParentMode Then
+			ConsoleWrite("Timestamps from INDX of parent (indexed $STANDARD_INFORMATION):" & @CRLF)
+			ConsoleWrite("CreationTime: " & $IndxCTimeFromParent & @CRLF)
+			ConsoleWrite("LastWriteTime: " & $IndxATimeFromParent & @CRLF)
+			ConsoleWrite("ChangeTime(MFT): " & $IndxMTimeFromParent & @CRLF)
+			ConsoleWrite("LastAccessTime: " & $IndxRTimeFromParent & @CRLF & @CRLF)
+		Else
+			ConsoleWrite("Timestamp dump from INDX of parent is not accessible when target is specified by IndexNumber" & @CRLF)
+		EndIf
 		Return
 	EndIf
 
