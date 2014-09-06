@@ -1,4 +1,4 @@
-This is an advanced filesystem timestamp manipulation tool, originally inspired by good old timestomp. This version is NTFS only, and both $STANDARD_INFORMATION and $FILE_NAME attributes timestamps are supported for modification. In latest version, there is no longer any dependency on NtSetInformationFile. That means it is completely based on resolving the filesystem internally and writing the timestamps directly to the physical disk, and effectively bypassing anything imposed by the filesystem/OS. Though you need to have adminstrator privileges. As of version 1.0.0.10, a kernel mode driver is responsible for writing the modified record back to disk. There is also support for unlimited $FILE_NAME attributes, but is restricted to what fits inside an MFT record (not spread across $ATTRIBUTE_LISTS). In earlier versions only the $FILE_NAME attributes was handled this way, but now also $STANDARD_INFORMATION. However be sure to have read the warning below! 
+This is an advanced filesystem timestamp manipulation tool, originally inspired by good old timestomp. This version is NTFS only, and attributes supported for timestamp manipulation are $STANDARD_INFORMATION, $FILE_NAME, $INDEX_ROOT, and $INDEX_ALLOCATION. In latest version, there is no longer any dependency on NtSetInformationFile. That means it is completely based on resolving the filesystem internally and writing the timestamps directly to the physical disk, and effectively bypassing anything imposed by the filesystem/OS. Though you need to have adminstrator privileges. As of version 1.0.0.10, a kernel mode driver is responsible for writing the modified record back to disk. There is also support for unlimited $FILE_NAME attributes, but is restricted to what fits inside an MFT record (not spread across $ATTRIBUTE_LISTS). In earlier versions only the $FILE_NAME attributes was handled this way, but now also $STANDARD_INFORMATION. However be sure to have read the warning below! Makes Cache Manager reload the file system cache stored in memory, after modification.
 
 The $FILE_NAME attribute can be present twice, giving it 8 possible timestamps. Short filenames have only 1 $FILE_NAME attribute (4 timestamps) whereas files with long filenames have 2 $FILE_NAME attributes (4+4 timestamps). In fact, files with links (for instance hardlinks), may have more than 2 $FILE_NAME attributes!
 
@@ -19,7 +19,10 @@ Parameter explanation;
 - Parameter 4 determines if $STANDARD_INFORMATION or $FILE_NAME attribute or both should be modified. 
 "-si" will only update timestamps in $STANDARD_INFORMATION (4 timestamps), or just LastWriteTime, LastAccessTime and CreationTime (3 timestamps) for non-NTFS.
 "-fn" will only update timestamps in $FILE_NAME (4 timestamps for short names, 8 timestamps for long names, or more if links are involved), and only for NTFS.
-"-x" will update timestamps in both $FILE_NAME and $STANDARD_INFORMATION. 
+"-x" will update timestamps in both $FILE_NAME and $STANDARD_INFORMATION.
+
+- Parameter 4 is optional.
+"-shadow" will activate shadow copy mode. Relevant for both read and write. See examples.
 
 Note:
 Directories are also supported just like regular files. Since version 1.0.0.10, where a kernel mode driver was implemented, a lot of the restrictions put on earlier versions are now removed. The restrictions that was limiting SetMace in previous versions:
@@ -41,6 +44,9 @@ Directories keep attributes of type $INDEX_ROOT and/or $INDEX_ALLOCATION which c
 
 Dumping information with the -d switch
 From version 1.0.0.9 the -d switch will also dump timestamp information from the target volume, as well as from present any shadow copies of that volume. So if the volume that the target file resides on, also have shadow copies, the -d switch will also dump information for the same MFT reference for every relevant shadow copy. Matching shadow copies are identified by the volume name and serial number. The dumped information includes filename, parent ref, sequence number and hardlink number to help identify if the same file actually holds a particular MFT ref across shadow copies. From version 1.0.0.13, also the timestamps in the INDX of the parent are retrieved.
+
+Shadow Copies
+With version 1.0.0.14 support has been added to also modify timestamps within shadow copies. It is either all shadow copies or none. Use the -shadow switch. The switch matters for both read and write mode. In order to add the write mode support, quite comprehensive shadow copy parser code had to be added to SetMace. So how could write mode work when shadow copies are read-only. The reason is it is only the symbolic link to it like for instance \\.\GLOBALROOT\Device\HarddiskVolumeShadowCopyX that is read-only. In the end, on the filesystem, it is just a file within the "System Volume Information" folder. However, this file has a complicated structure that needs to be parsed correctly. And the actual data within it, are the modified clusters of the original volume (may appear as a bunch of bits and pieces). The name of the shadow copies are constructed like {GUID}{GUID}, whereas the information about these files are found within a shadow copy master file named {3808876b-c176-4e48-b7ae-04046e6cc752}. The method by which it writes to the shadow copies, is by direct writing to sectors just like it modifes $MFT.
 
 Warning:
 Bypassing the filesystem and writing to physical disk is by nature a risky operation. And it's success is totally dependent on me gotten SetMace resolving NTFS correctly. Having said that, I have tested it on both XP sp3 x86,  Windows 7 x86/x64 and Windows 8.1 x64, on which it works fine. This new method of timestamp manipulation is a whole lot harder to detect. In fact, I can't think of any method, except the presence of this tool, and by comparison of some other artifact (like a shadow copy, and maybe $LogFile on not so heavily used volumes). The earlier version with the move-trick and/or NtSetInformationFile would leave traces in the $LogFile. Even though the $LogFile is circular, and does not hold "evidence" for long on a system drive, you may find earlier versions of it in a shadow copy. However, this is certainly advanced forensic work. I will still call this new version experimental, so please do not test on any volume you are afraid of loosing data from. If you want to test it for me, please let me know.
@@ -69,10 +75,16 @@ setmace.exe "C:\a long filename.txt" -e "2000:01:01:00:00:00:789:1234" -fn
 Setting all 4+4 (or 4+8) timestamps in both $STANDARD_INFORMATION and $FILE_NAME attributes:
 setmace.exe C:\file.txt -z "2000:01:01:00:00:00:789:1234" -x
 
-Setting the LastWriteTime in both $STANDARD_INFORMATION and $FILE_NAME attribute of root directory (defined by index number):
+Setting the LastWriteTime in both $STANDARD_INFORMATION and $FILE_NAME attribute of root directory (defined by its index number):
 setmace.exe C:5 -m "2000:01:01:00:00:00:789:1234" -x
 
-Dumping all timestamps for $MFT itself:
+Setting the LastWriteTime in the $STANDARD_INFORMATION attribute, for current timestamps and in all shadow copies:
+setmace.exe C:\file.txt -m "2000:01:01:00:00:00:789:1234" -si -shadow
+
+Dumping all timestamps for $Boot (including all shadow copies):
+setmace.exe C:\$Boot -d -shadow
+
+2 methods for dumping all timestamps for $MFT itself (no shadow copy timestamps displayed):
 setmace.exe C:\$MFT -d
 or
 setmace.exe C:0 -d

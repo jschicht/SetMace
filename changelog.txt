@@ -1,3 +1,4 @@
+v1.0.0.14: Added option to additionally read/write from/to shadow copies with new -shadow switch. Reading from shadow copies is done through both raw parsing and symblic link. Full support for writing to shadow copies. Added functionality to directly modify $INDEX_ROOT/$INDEX/ALLOCATION of parent. Implemented raw disk parsing for resolving all files, meaning any file can now be modified. Removed the touch of file through NtQueryInformationFile, as it's no longer needed. Fixed bug that caused dumped timestamps from shadow copies to be incorrect. Fixed bug that caused displayed offsets to be incorrect. Organized displayed output better and very differently to previous versions.
 
 v1.0.0.13: Implemented fix for forcing Windows to synchronize the $STANDARD_INFORMATION timestamps to the ones indexed in the INDX of the parent. Added support for dumping timestamps from INDX in the parent.
 
