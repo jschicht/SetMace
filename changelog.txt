@@ -1,3 +1,5 @@
+v1.0.0.16: Added exit if MFT record is old style NT record.
+
 v1.0.0.15: Fixed bug when dumping timestamps and target was defined was indexnumber, that displayed timestamps of parent instead of target. Fixed bug when $MFT itself contained an $ATTRIBUTE_LIST. Fixed bug with handling records that was split across dataruns. Increased initialization size of array for runs and vcns which caused it to crash with extreme fragmentation.
 
 v1.0.0.14: Added option to additionally read/write from/to shadow copies with new -shadow switch. Reading from shadow copies is done through both raw parsing and symblic link. Full support for writing to shadow copies. Added functionality to directly modify $INDEX_ROOT/$INDEX/ALLOCATION of parent. Implemented raw disk parsing for resolving all files, meaning any file can now be modified. Removed the touch of file through NtQueryInformationFile, as it's no longer needed. Fixed bug that caused dumped timestamps from shadow copies to be incorrect. Fixed bug that caused displayed offsets to be incorrect. Organized displayed output better and very differently to previous versions.

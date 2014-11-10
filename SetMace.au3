@@ -1,10 +1,9 @@
 #RequireAdmin
 #Region ;**** Directives created by AutoIt3Wrapper_GUI ****
-#AutoIt3Wrapper_UseX64=y
 #AutoIt3Wrapper_Change2CUI=y
 #AutoIt3Wrapper_Res_Comment=Advanced timestamp manipulation on NTFS
 #AutoIt3Wrapper_Res_Description=Change or dump any file timestamp by using low level disk access
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.15
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.16
 #AutoIt3Wrapper_Res_LegalCopyright=Joakim Schicht
 #AutoIt3Wrapper_Res_requestedExecutionLevel=asInvoker
 #AutoIt3Wrapper_Res_File_Add=C:\tmp\sectorio.sys
@@ -67,7 +66,7 @@ Global Const $tagUNICODESTRING = "ushort Length;ushort MaximumLength;ptr Buffer"
 Global $Timerstart = TimerInit()
 
 ConsoleWrite("Starting SetMace by Joakim Schicht" & @CRLF)
-ConsoleWrite("Version 1.0.0.15" & @CRLF & @CRLF)
+ConsoleWrite("Version 1.0.0.16" & @CRLF & @CRLF)
 
 If Not $cmdline[0] Then
 	ConsoleWrite("Error: Missing parameters" & @CRLF)
@@ -2232,6 +2231,9 @@ Func _FindFileMFTRecord($TargetDevice,$MftRef)
 		$RetVal[1] = $record
 		Return $RetVal
 	Else
+		If StringMid($record,11,2) = "2A" Then
+			ConsoleWrite("Old style NT record not supported" & @CRLF)
+		EndIf
 		ConsoleWrite("Error wrong ref: " & StringMid($record,91,8) & @CRLF)
 		_WinAPI_CloseHandle($hFile)
 		Return ""
